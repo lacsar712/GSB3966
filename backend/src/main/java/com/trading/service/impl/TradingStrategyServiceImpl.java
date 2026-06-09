@@ -9,11 +9,14 @@ import com.trading.dto.StrategyUpdateRequest;
 import com.trading.entity.TradingStrategy;
 import com.trading.exception.BusinessException;
 import com.trading.mapper.TradingStrategyMapper;
+import com.trading.security.UserPrincipal;
 import com.trading.service.TradingStrategyService;
 import com.trading.vo.PageResult;
 import com.trading.vo.StrategyVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -38,9 +41,9 @@ public class TradingStrategyServiceImpl extends ServiceImpl<TradingStrategyMappe
         LambdaQueryWrapper<TradingStrategy> wrapper = new LambdaQueryWrapper<>();
         
         if (StringUtils.hasText(keyword)) {
-            wrapper.like(TradingStrategy::getStrategyName, keyword)
+            wrapper.and(w -> w.like(TradingStrategy::getStrategyName, keyword)
                     .or()
-                    .like(TradingStrategy::getStrategyCode, keyword);
+                    .like(TradingStrategy::getStrategyCode, keyword));
         }
         if (StringUtils.hasText(strategyType)) {
             wrapper.eq(TradingStrategy::getStrategyType, strategyType);
@@ -74,6 +77,14 @@ public class TradingStrategyServiceImpl extends ServiceImpl<TradingStrategyMappe
         TradingStrategy strategy = strategyMapper.selectByIdWithCreator(id);
         if (strategy == null) {
             throw new BusinessException("策略不存在");
+        }
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal) {
+            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+            if ("TRADER".equals(userPrincipal.getRoleCode())
+                    && !strategy.getCreatorId().equals(userPrincipal.getUserId())) {
+                throw new BusinessException("无权查看此策略");
+            }
         }
         return convertToVO(strategy);
     }
