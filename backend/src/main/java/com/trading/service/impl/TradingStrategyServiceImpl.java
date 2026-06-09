@@ -9,11 +9,14 @@ import com.trading.dto.StrategyUpdateRequest;
 import com.trading.entity.TradingStrategy;
 import com.trading.exception.BusinessException;
 import com.trading.mapper.TradingStrategyMapper;
+import com.trading.security.UserPrincipal;
 import com.trading.service.TradingStrategyService;
 import com.trading.vo.PageResult;
 import com.trading.vo.StrategyVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -37,20 +40,20 @@ public class TradingStrategyServiceImpl extends ServiceImpl<TradingStrategyMappe
         Page<TradingStrategy> page = new Page<>(pageNum, pageSize);
         LambdaQueryWrapper<TradingStrategy> wrapper = new LambdaQueryWrapper<>();
         
+        if ("TRADER".equals(roleCode)) {
+            wrapper.eq(TradingStrategy::getCreatorId, currentUserId);
+        }
+        
         if (StringUtils.hasText(keyword)) {
-            wrapper.like(TradingStrategy::getStrategyName, keyword)
+            wrapper.and(w -> w.like(TradingStrategy::getStrategyName, keyword)
                     .or()
-                    .like(TradingStrategy::getStrategyCode, keyword);
+                    .like(TradingStrategy::getStrategyCode, keyword));
         }
         if (StringUtils.hasText(strategyType)) {
             wrapper.eq(TradingStrategy::getStrategyType, strategyType);
         }
         if (status != null) {
             wrapper.eq(TradingStrategy::getStatus, status);
-        }
-        
-        if ("TRADER".equals(roleCode)) {
-            wrapper.eq(TradingStrategy::getCreatorId, currentUserId);
         }
         
         wrapper.orderByDesc(TradingStrategy::getCreateTime);
@@ -75,6 +78,20 @@ public class TradingStrategyServiceImpl extends ServiceImpl<TradingStrategyMappe
         if (strategy == null) {
             throw new BusinessException("策略不存在");
         }
+        
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal) {
+            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+            String roleCode = userPrincipal.getRoleCode();
+            Long currentUserId = userPrincipal.getUserId();
+            
+            if (!"ADMIN".equals(roleCode) && !"MANAGER".equals(roleCode)) {
+                if (!strategy.getCreatorId().equals(currentUserId)) {
+                    throw new BusinessException("无权查看此策略");
+                }
+            }
+        }
+        
         return convertToVO(strategy);
     }
     
